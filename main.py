@@ -47,11 +47,14 @@ async def receive_webhook(request: Request):
         for entry in data.get('entry', []):
             for messaging_event in entry.get('messaging', []):
                 sender_id = messaging_event['sender']['id']
+                print(f"messaging_event: {messaging_event}")
 
                 # Xử lý tin nhắn
                 if 'message' in messaging_event:
                     message_text = messaging_event['message']
-                    await handleMessage(sender_id, message_text)
+                    is_echo = message_text.get("is_echo", None)
+                    if is_echo is None:
+                        await handleMessage(sender_id, message_text)
 
                 # Xử lý postback
                 elif 'postback' in messaging_event:
@@ -66,10 +69,9 @@ async def handleMessage(sender_psid, received_message):
   
     if 'text' in received_message:
         content = received_message.get('text', '')
-        if content != "Restart this conversation" and content != "Bắt đầu":
-            thread_id = user_threads.get(sender_psid, None)
-            print(f"thread id: {thread_id}")
-            await stream_messages(sender_psid, thread_id=thread_id, message=content, introduce=False)
+        thread_id = user_threads.get(sender_psid, None)
+        print(f"thread id: {thread_id}")
+        await stream_messages(sender_psid, thread_id=thread_id, message=content, introduce=False)
         
     elif "attachments" in received_message:
         attachment_url = received_message["attachments"][0]["payload"].get("url", None)
@@ -112,8 +114,8 @@ async def handlePostback(sender_psid, received_postback):
         if payload == "GET_STARTED":
             await stream_messages(sender_psid)
         elif payload == "RESTART_CONVERSATION":
-            if sender_psid in user_threads:
-                del user_threads[sender_psid]
+            # if sender_psid in user_threads:
+            #     del user_threads[sender_psid]
             await stream_messages(sender_psid)
         elif payload == "yes":
             response = {
@@ -153,7 +155,7 @@ async def stream_messages(sender_psid: str, thread_id: str = None, message: str 
         async with aiohttp.ClientSession() as session:
             async with session.post(url, json=body, headers=headers) as response:
                 if response.status != 200:
-                    error_msg = f"Failed to call API {url}: {response.content} ||| {response.status}"
+                    error_msg = f"Failed to call API {url}: {response.content} | {response.status}"
                     await callSendAPI(sender_psid, {"text": error_msg})
                     return
 
@@ -166,6 +168,7 @@ async def stream_messages(sender_psid: str, thread_id: str = None, message: str 
                                 message_dict = json.loads(data)
                                 if "content" in message_dict and message_dict["type"] == "ai":
                                     # Gửi tin nhắn về Messenger
+                                    print(f"message_dict: {message_dict}")
                                     await callSendAPI(sender_psid, {"text": message_dict["content"]})
                                     if get_thread_flag == False:
                                         user_threads[sender_psid] = message_dict["thread_id"]    
@@ -192,7 +195,7 @@ async def callSendAPI(sender_psid, response):
     }
     
     response = requests.post(url, headers=headers, params=params, json=payload)
-    print(response.status_code, response.text)
+    print(f"Send message to messenger: code {response.status_code} | text: {response.text}")
     
  
 if __name__ == '__main__':
